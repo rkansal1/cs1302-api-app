@@ -1,9 +1,14 @@
 package cs1302.api;
 
+import com.google.gson.annotations.SerializedName;
+
 /**
- * Organizes API response from Art Institute of Chicago (ARTIC)
+ * Organizes API response from Art Institute of Chicago (ARTIC).
  */
 public class ArticArtwork {
-    String iiif_url;
-    String image_id;
+    @SerializedName("iiif_url")
+    String iiifUrl;
+
+    @SerializedName("image_id")
+    String imageId;
 }

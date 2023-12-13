@@ -32,7 +32,11 @@ import com.google.gson.GsonBuilder;
 import java.util.ArrayList;
 
 /**
- * REPLACE WITH NON-SHOUTING DESCRIPTION OF YOUR APP.
+ * API App lets user choose category from NYT Top Articles API.
+ * The Art Institute of Chicago API is then queried with
+ * the keywords from an NYT article and 20 random images are
+ * displayed, making a gallery of the top article of the category
+ * chosen by the user.
  */
 public class ApiApp extends Application {
 
@@ -51,12 +55,11 @@ public class ApiApp extends Application {
     private Scene scene;
     private VBox root;
     private HBox inputLayer;
-    private Label locationLabel;//try text
-    private TextField cityBox;
-    private TextField zipCodeBox;
-    private Label dateLabel;
-    private ComboBox<String> dateBox;
+    private Label categoryLabel;//try text
+    private ComboBox<String> categoryBox;
     private Text instructions;
+    private Text articleName;
+    private Text buttonInstructions;
     private Button loadButton;
     private HBox mainBox;
     private HBox buttonLayer;
@@ -68,6 +71,7 @@ public class ApiApp extends Application {
 
     private NYTResponse nytResponses;
     private NYTResult[] nytResults;
+    private int nytPage;
 
     /**
      * Constructs an {@code ApiApp} object. This default (i.e., no argument)
@@ -79,24 +83,53 @@ public class ApiApp extends Application {
         this.root = new VBox(10);
 
         inputLayer = new HBox();
-        locationLabel = new Label("Location: ");
-        cityBox = new TextField("City");
-        zipCodeBox = new TextField("Zip Code");
-        dateLabel = new Label("Dates:");
-        dateBox = new ComboBox<String>(); //add ranges
-        dateBox.getItems().addAll();
-        instructions = new Text("Enter your location to get events near you with good weather.");
+        categoryLabel = new Label("Category: ");
+        categoryBox = new ComboBox<String>(); //add ranges
+        categoryBox.getItems().addAll(
+            "arts",
+            "automobiles",
+            "books/review",
+            "business",
+            "fashion",
+            "food",
+            "health",
+            "home",
+            "insider",
+            "magazine",
+            "movies",
+            "nyregion",
+            "obituaries",
+            "opinion",
+            "politics",
+            "realestate",
+            "science",
+            "sports",
+            "sundayreview",
+            "technology",
+            "theater",
+            "t-magazine",
+            "travel",
+            "upshot",
+            "us",
+            "world");
+        categoryBox.setValue("arts");
+        instructions = new Text("Make a gallery that represents today's NYT news in that category");
+        articleName = new Text("Load an article category");
+        buttonInstructions = new Text("Load gallery for a different article in this category.");
         loadButton = new Button("Load");
         mainBox = new HBox();
         buttonLayer = new HBox();
         prevButton = new Button("Prev");
         nextButton = new Button("Next");
+        prevButton.setDisable(true);
+        nextButton.setDisable(true);
         imageUrls = new ArrayList<String>();
 
         imageArr = new ImageView[20];
         for (int i = 0; i < 20; i++) {
             imageArr[i] = new ImageView(new Image("file:resources/default.png"));
         }
+        nytPage = 0;
         //populate mainBox with 20 default images
         setImages();
     } // ApiApp
@@ -117,10 +150,10 @@ public class ApiApp extends Application {
         Label notice = new Label("Modify the starter code to suit your needs.");
 
         // setup scene
-        inputLayer.getChildren().addAll(locationLabel, cityBox, zipCodeBox,
-                                        dateLabel, dateBox, loadButton);
+        inputLayer.getChildren().addAll(categoryLabel, categoryBox, loadButton);
         buttonLayer.getChildren().addAll(prevButton, nextButton);
-        root.getChildren().addAll(inputLayer, instructions, mainBox, buttonLayer);
+        root.getChildren().addAll(inputLayer, instructions, articleName,
+                                  mainBox, buttonInstructions, buttonLayer);
         scene = new Scene(root);
 
         // setup stage
@@ -132,16 +165,38 @@ public class ApiApp extends Application {
         Platform.runLater(() -> this.stage.setResizable(false));
         Runnable r = () -> load();
         loadButton.setOnAction(event -> startThread(r));
+        prevButton.setOnAction(event -> prevButtonAction());
+        nextButton.setOnAction(event -> nextButtonAction());
 
     } // start
 
     /**
-     * Load button action
+     * Action for prev button.
+     */
+    private void prevButtonAction() {
+        nytPage -= 1;
+        Runnable r = () -> loadArt(nytResults[nytPage].desFacet);
+        startThread(r);
+    }
+
+    /**
+     * Action for next button.
+     */
+    private void nextButtonAction() {
+        nytPage++;
+        Runnable r = () -> loadArt(nytResults[nytPage].desFacet);
+        startThread(r);
+    }
+
+    /**
+     * Load button action.
      */
     public void load() {
         loadButton.setDisable(true);
+        prevButton.setDisable(true);
+        nextButton.setDisable(true);
         instructions.setText("Loading...");
-        String category = "arts";
+        String category = categoryBox.getValue();
         String nytQuery = "https://api.nytimes.com/svc/topstories/v2/" +
             category + ".json?api-key=" + nytKey;
         try {
@@ -160,14 +215,23 @@ public class ApiApp extends Application {
             if (nytResults == null) {
                 throw new Exception("Failed to access NYT API");
             } // if
-            loadArt(nytResults[0].des_facet);
+            System.out.println(nytResults[nytPage].title);
+            loadArt(nytResults[nytPage].desFacet);
         } catch (Exception e) {
             e.printStackTrace();
             Platform.runLater(() -> alert(e, nytQuery));
         } //catch
     } //load
 
+    /**
+     * Loads art by querying ARTIC api with NYT article keywords.
+     * @param words -- list of keywords
+     */
     public void loadArt(String[] words) {
+        imageUrls.clear();
+        prevButton.setDisable(true);
+        nextButton.setDisable(true);
+        instructions.setText("Loading...");
         for (String word : words) {
             String encodedWord = URLEncoder.encode(word, StandardCharsets.UTF_8);
             String artQuery = "https://api.artic.edu/api/v1/artworks/search?q=" + encodedWord;
@@ -187,38 +251,43 @@ public class ApiApp extends Application {
                 //constructs image links
                 for (ArticData a : articData) {
                     try {
-                        System.out.println("api link: " + a.api_link); //delete
                         HttpRequest imageRequest = HttpRequest.newBuilder()
-                            .uri(URI.create(a.api_link))
+                            .uri(URI.create(a.apiLink))
                             .build();
-                        HttpResponse<String> imageResponse = HTTP_CLIENT.send(imageRequest,
-                                                                              BodyHandlers.ofString());
+                        HttpResponse<String> imageResponse = HTTP_CLIENT
+                            .send(imageRequest,BodyHandlers.ofString());
                         String imageBody = imageResponse.body();
                         if (imageResponse.statusCode() != 200) {
                             throw new Exception("Failed to access ARTIC API");
                         } // if
                         ArticArt art = GSON.fromJson(imageBody, ArticArt.class);
                         ArticArtwork artwork = art.data;
-                        String image_url = "https://artic.edu/iiif/2/" + artwork.image_id +
+                        String imageUrl = "https://artic.edu/iiif/2/" + artwork.imageId +
                             "/full/843,/0/default.jpg";
-                        imageUrls.add(image_url);
+                        imageUrls.add(imageUrl);
                     } catch (Exception e) {
-                        System.out.println("Failed to access " + a.api_link);
+                        System.out.println("Failed to access " + a.apiLink);
                     } // try-catch
                 } // for
             } catch (Exception e) {
                 e.printStackTrace();
             } // try-catch
         } // for
-        Platform.runLater(() -> updateImages());
+        updateImageArr();
     }
 
-    private void updateImages() {
+    /**
+     * Updates array of 20 ImageViews to be updated in interface.
+     */
+    private void updateImageArr() {
         System.out.println("Updating images");
         int numImages = imageUrls.size();
-        System.out.println(numImages);
         if (numImages < 20) {
-            throw new IllegalArgumentException("Not enough artworks provided");
+            for (int im = 0; im < numImages; im++) {
+                System.out.println(imageUrls.get(im));
+            }
+            throw new IllegalArgumentException("Not enough artworks found" +
+                                               " please try a different category.");
         }
 
         //randomly choose 20 images from imageUrls
@@ -227,7 +296,6 @@ public class ApiApp extends Application {
         boolean b = true;
         while (i < 20) {
             b = true;
-            System.out.println(i);
             int randNum = (int)(Math.random() * numImages);
             for (int j = 0; j < i; j++) {
                 if (alreadyIn[j] == randNum) {
@@ -242,29 +310,21 @@ public class ApiApp extends Application {
                 i++;
             }
         }
-
-        for (ImageView imageView : imageArr) {
-            System.out.println(imageView.getImage().getUrl());
-        }
-        /*
-        HBox tempHBox = new HBox();
-        for (i = 0; i < 5; i++) {
-            VBox tempVBox = new VBox();
-            for (int j = 0; j < 4; j++) {
-                System.out.println(j);
-                tempVBox.getChildren().addAll(imageArr[i * 4 + j]);
-                System.out.println(imageArr[i*4+j].getImage().getUrl());
-            }
-            tempHBox.getChildren().addAll(tempVBox);
-        }
-
-        mainBox = tempHBox;
-        */
-        setImages();
+        Platform.runLater(() -> setImages());
         instructions.setText("Images loaded.");
         loadButton.setDisable(false);
+        articleName.setText(nytResults[nytPage].title);
+        if (nytPage > 0) {
+            prevButton.setDisable(false);
+        }
+        if (nytPage < (nytResults.length - 1)) {
+            nextButton.setDisable(false);
+        }
     }
 
+    /**
+     * Loads 20 images into interface.
+     */
     private void setImages() {
         mainBox.getChildren().clear();
         for (int i = 0; i < 5; i++) {
@@ -278,7 +338,7 @@ public class ApiApp extends Application {
     }
 
     /**
-     * Displays error on screen
+     * Displays error on screen.
      * @param uri -- the uri that was given when the exception was thrown
      * @param e -- the thrown exception
      */
@@ -293,6 +353,10 @@ public class ApiApp extends Application {
         loadButton.setDisable(false);
     } // alert
 
+    /**
+     * Starts daemon thread.
+     * @param r -- runnable that thread runs
+     */
     private void startThread(Runnable r) {
         Thread t = new Thread(r);
         t.setDaemon(true);
