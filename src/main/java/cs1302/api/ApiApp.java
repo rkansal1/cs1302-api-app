@@ -63,7 +63,8 @@ public class ApiApp extends Application {
     private Button prevButton;
     private Button nextButton;
     private ImageView[] imageArr;
-    private ArrayList<ImageView> articImages;
+    private ArrayList<String> imageUrls;
+    private ImageView[] articImages;
 
     private NYTResponse nytResponses;
     private NYTResult[] nytResults;
@@ -90,19 +91,14 @@ public class ApiApp extends Application {
         buttonLayer = new HBox();
         prevButton = new Button("Prev");
         nextButton = new Button("Next");
+        imageUrls = new ArrayList<String>();
 
         imageArr = new ImageView[20];
+        for (int i = 0; i < 20; i++) {
+            imageArr[i] = new ImageView(new Image("file:resources/default.png"));
+        }
         //populate mainBox with 20 default images
-        for (int i = 0; i < 5; i++) {
-            VBox tempVbox = new VBox();
-            for (int j = 0; j < 4; j++) {
-                Image tempImage = new Image("file:resources/default.png");
-                ImageView tempImageView = new ImageView(tempImage);
-                imageArr[(i * 4 + j)] = tempImageView;
-                tempVbox.getChildren().addAll(tempImageView);
-            } //for
-            mainBox.getChildren().addAll(tempVbox);
-        } //for
+        setImages();
     } // ApiApp
 
     /** {@inheritDoc} */
@@ -143,6 +139,7 @@ public class ApiApp extends Application {
      * Load button action
      */
     public void load() {
+        loadButton.setDisable(true);
         instructions.setText("Loading...");
         String category = "arts";
         String nytQuery = "https://api.nytimes.com/svc/topstories/v2/" +
@@ -171,7 +168,6 @@ public class ApiApp extends Application {
     } //load
 
     public void loadArt(String[] words) {
-        ArrayList<String> urls = new ArrayList<>();
         for (String word : words) {
             String encodedWord = URLEncoder.encode(word, StandardCharsets.UTF_8);
             String artQuery = "https://api.artic.edu/api/v1/artworks/search?q=" + encodedWord;
@@ -203,32 +199,35 @@ public class ApiApp extends Application {
                         } // if
                         ArticArt art = GSON.fromJson(imageBody, ArticArt.class);
                         ArticArtwork artwork = art.data;
-                        String image_url = artwork.iiif_url + "/" + artwork.image_id +
+                        String image_url = "https://artic.edu/iiif/2/" + artwork.image_id +
                             "/full/843,/0/default.jpg";
-                        System.out.println(image_url);
-                        Image artImage = new Image(image_url);
-                        ImageView artImageView = new ImageView(artImage);
-                        articImages.add(artImageView);
+                        imageUrls.add(image_url);
                     } catch (Exception e) {
                         System.out.println("Failed to access " + a.api_link);
                     } // try-catch
                 } // for
-                Platform.runLater(() -> updateImages());
             } catch (Exception e) {
                 e.printStackTrace();
             } // try-catch
         } // for
+        Platform.runLater(() -> updateImages());
     }
 
     private void updateImages() {
-        int numImages = articImages.size();
+        System.out.println("Updating images");
+        int numImages = imageUrls.size();
+        System.out.println(numImages);
         if (numImages < 20) {
             throw new IllegalArgumentException("Not enough artworks provided");
         }
+
+        //randomly choose 20 images from imageUrls
         int[] alreadyIn = new int[20];
         int i = 0;
         boolean b = true;
         while (i < 20) {
+            b = true;
+            System.out.println(i);
             int randNum = (int)(Math.random() * numImages);
             for (int j = 0; j < i; j++) {
                 if (alreadyIn[j] == randNum) {
@@ -238,11 +237,46 @@ public class ApiApp extends Application {
             }
             if (b) {
                 alreadyIn[i] = randNum;
-                imageArr[i] = articImages.get(i);
+                Image tempImage = new Image(imageUrls.get(i), 100, 100, true, true);
+                imageArr[i].setImage(tempImage);
                 i++;
             }
         }
+
+        for (ImageView imageView : imageArr) {
+            System.out.println(imageView.getImage().getUrl());
+        }
+        /*
+        HBox tempHBox = new HBox();
+        for (i = 0; i < 5; i++) {
+            VBox tempVBox = new VBox();
+            for (int j = 0; j < 4; j++) {
+                System.out.println(j);
+                tempVBox.getChildren().addAll(imageArr[i * 4 + j]);
+                System.out.println(imageArr[i*4+j].getImage().getUrl());
+            }
+            tempHBox.getChildren().addAll(tempVBox);
+        }
+
+        mainBox = tempHBox;
+        */
+        setImages();
+        instructions.setText("Images loaded.");
+        loadButton.setDisable(false);
     }
+
+    private void setImages() {
+        mainBox.getChildren().clear();
+        for (int i = 0; i < 5; i++) {
+            VBox tempVbox = new VBox();
+            for (int j = 0; j < 4; j++) {
+                ImageView tempImageView = imageArr[i * 4 + j];
+                tempVbox.getChildren().addAll(tempImageView);
+            } //for
+            mainBox.getChildren().addAll(tempVbox);
+        } //for
+    }
+
     /**
      * Displays error on screen
      * @param uri -- the uri that was given when the exception was thrown
@@ -256,6 +290,7 @@ public class ApiApp extends Application {
         alert.setResizable(true);
         alert.showAndWait();
         instructions.setText("Last attempt failed");
+        loadButton.setDisable(false);
     } // alert
 
     private void startThread(Runnable r) {
