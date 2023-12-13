@@ -63,6 +63,10 @@ public class ApiApp extends Application {
     private Button prevButton;
     private Button nextButton;
     private ImageView[] imageArr;
+    private ArrayList<ImageView> articImages;
+
+    private NYTResponse nytResponses;
+    private NYTResult[] nytResults;
 
     /**
      * Constructs an {@code ApiApp} object. This default (i.e., no argument)
@@ -130,7 +134,8 @@ public class ApiApp extends Application {
         stage.sizeToScene();
         stage.show();
         Platform.runLater(() -> this.stage.setResizable(false));
-        loadButton.setOnAction(event -> load());
+        Runnable r = () -> load();
+        loadButton.setOnAction(event -> startThread(r));
 
     } // start
 
@@ -143,29 +148,101 @@ public class ApiApp extends Application {
         String nytQuery = "https://api.nytimes.com/svc/topstories/v2/" +
             category + ".json?api-key=" + nytKey;
         try {
-            HttpRequest request = HttpRequest.newBuilder()
+            HttpRequest nytRequest = HttpRequest.newBuilder()
                 .uri(URI.create(nytQuery))
                 .build();
-            HttpResponse<String> response = HTTP_CLIENT.send(request, BodyHandlers.ofString());
-            String body = response.body();
-            if (response.statusCode() != 200) {
+            HttpResponse<String> nytResponse = HTTP_CLIENT.send(nytRequest,
+                                                                BodyHandlers.ofString());
+            String body = nytResponse.body();
+            if (nytResponse.statusCode() != 200) {
                 throw new Exception("Failed to access NYT API");
             } //if
-            NYTResponse nytResponse = GSON.fromJson(body, NYTResponse.class);
-            NYTResult[] nytResults = nytResponse.results;
+            nytResponses = GSON.fromJson(body, NYTResponse.class);
+            nytResults = nytResponses.results;
 
-            if (nytResults != null) {
-                for (NYTResult n : nytResults) {
-                    System.out.println(n);
-                }
-            }
-
+            if (nytResults == null) {
+                throw new Exception("Failed to access NYT API");
+            } // if
+            loadArt(nytResults[0].des_facet);
         } catch (Exception e) {
             e.printStackTrace();
             Platform.runLater(() -> alert(e, nytQuery));
         } //catch
     } //load
 
+    public void loadArt(String[] words) {
+        ArrayList<String> urls = new ArrayList<>();
+        for (String word : words) {
+            String encodedWord = URLEncoder.encode(word, StandardCharsets.UTF_8);
+            String artQuery = "https://api.artic.edu/api/v1/artworks/search?q=" + encodedWord;
+            try {
+                //queries api searching for term
+                HttpRequest articRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(artQuery))
+                    .build();
+                HttpResponse<String> articResponse = HTTP_CLIENT.send(articRequest,
+                                                                      BodyHandlers.ofString());
+                String articBody = articResponse.body();
+                if (articResponse.statusCode() != 200) {
+                    throw new Exception("Failed to access ARTIC API");
+                } // if
+                ArticResponse articResponses = GSON.fromJson(articBody, ArticResponse.class);
+                ArticData[] articData = articResponses.data;
+                //constructs image links
+                for (ArticData a : articData) {
+                    try {
+                        System.out.println("api link: " + a.api_link); //delete
+                        HttpRequest imageRequest = HttpRequest.newBuilder()
+                            .uri(URI.create(a.api_link))
+                            .build();
+                        HttpResponse<String> imageResponse = HTTP_CLIENT.send(imageRequest,
+                                                                              BodyHandlers.ofString());
+                        String imageBody = imageResponse.body();
+                        if (imageResponse.statusCode() != 200) {
+                            throw new Exception("Failed to access ARTIC API");
+                        } // if
+                        ArticArt art = GSON.fromJson(imageBody, ArticArt.class);
+                        ArticArtwork artwork = art.data;
+                        String image_url = artwork.iiif_url + "/" + artwork.image_id +
+                            "/full/843,/0/default.jpg";
+                        System.out.println(image_url);
+                        Image artImage = new Image(image_url);
+                        ImageView artImageView = new ImageView(artImage);
+                        articImages.add(artImageView);
+                    } catch (Exception e) {
+                        System.out.println("Failed to access " + a.api_link);
+                    } // try-catch
+                } // for
+                Platform.runLater(() -> updateImages());
+            } catch (Exception e) {
+                e.printStackTrace();
+            } // try-catch
+        } // for
+    }
+
+    private void updateImages() {
+        int numImages = articImages.size();
+        if (numImages < 20) {
+            throw new IllegalArgumentException("Not enough artworks provided");
+        }
+        int[] alreadyIn = new int[20];
+        int i = 0;
+        boolean b = true;
+        while (i < 20) {
+            int randNum = (int)(Math.random() * numImages);
+            for (int j = 0; j < i; j++) {
+                if (alreadyIn[j] == randNum) {
+                    b = false;
+                    break;
+                }
+            }
+            if (b) {
+                alreadyIn[i] = randNum;
+                imageArr[i] = articImages.get(i);
+                i++;
+            }
+        }
+    }
     /**
      * Displays error on screen
      * @param uri -- the uri that was given when the exception was thrown
@@ -180,5 +257,11 @@ public class ApiApp extends Application {
         alert.showAndWait();
         instructions.setText("Last attempt failed");
     } // alert
+
+    private void startThread(Runnable r) {
+        Thread t = new Thread(r);
+        t.setDaemon(true);
+        t.start();
+    }
 
 } // ApiApp
